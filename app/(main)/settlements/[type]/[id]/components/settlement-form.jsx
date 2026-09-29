@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
+import { UpiPaymentCard } from "@/components/upi-payment-card";
 
 // Form schema validation
 const settlementSchema = z.object({
@@ -45,8 +46,12 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
     },
   });
 
-  // Get selected payment direction
   const paymentType = watch("paymentType");
+  const amountInput = watch("amount");
+  const noteInput = watch("note");
+
+  // State for group member selection
+  const [selectedGroupMemberId, setSelectedGroupMemberId] = useState(null);
 
   // Single user settlement
   const handleUserSettlement = async (data) => {
@@ -130,9 +135,6 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
     }
   };
 
-  // For group settlements, we need to select a member
-  const [selectedGroupMemberId, setSelectedGroupMemberId] = useState(null);
-
   if (!currentUser) return null;
 
   // Render the form for individual settlement
@@ -153,7 +155,7 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
                 <span className="font-medium">{otherUser.name}</span> owes you
               </p>
               <span className="text-xl font-bold text-green-600">
-                ${netBalance.toFixed(2)}
+                ₹{netBalance.toFixed(2)}
               </span>
             </div>
           ) : (
@@ -162,11 +164,21 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
                 You owe <span className="font-medium">{otherUser.name}</span>
               </p>
               <span className="text-xl font-bold text-red-600">
-                ${Math.abs(netBalance).toFixed(2)}
+                ₹{Math.abs(netBalance).toFixed(2)}
               </span>
             </div>
           )}
         </div>
+
+        {/* Instant UPI Payment Section */}
+        {paymentType === "youPaid" && (
+          <UpiPaymentCard
+            receiverName={otherUser.name}
+            receiverUpiId={otherUser.upiId || ""}
+            amount={parseFloat(amountInput) || Math.abs(netBalance || 0)}
+            note={noteInput || "Splitr Settlement"}
+          />
+        )}
 
         {/* Payment direction */}
         <div className="space-y-2">
@@ -216,7 +228,7 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
         <div className="space-y-2">
           <Label htmlFor="amount">Amount</Label>
           <div className="relative">
-            <span className="absolute left-3 top-2.5">$</span>
+            <span className="absolute left-3 top-2.5">₹</span>
             <Input
               id="amount"
               placeholder="0.00"
@@ -261,8 +273,8 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
           <div className="space-y-2">
             {groupMembers.map((member) => {
               const isSelected = selectedGroupMemberId === member.userId;
-              const isOwing = member.netBalance < 0; // negative means they owe you
-              const isOwed = member.netBalance > 0; // positive means you owe them
+              const isTheyOwe = member.netBalance > 0; // positive netBalance means they owe you
+              const isYouOwe = member.netBalance < 0; // negative netBalance means you owe them
 
               return (
                 <div
@@ -284,17 +296,17 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
                     </div>
                     <div
                       className={`font-medium ${
-                        isOwing
+                        isTheyOwe
                           ? "text-green-600"
-                          : isOwed
+                          : isYouOwe
                             ? "text-red-600"
                             : ""
                       }`}
                     >
-                      {isOwing
-                        ? `They owe you $${Math.abs(member.netBalance).toFixed(2)}`
-                        : isOwed
-                          ? `You owe $${Math.abs(member.netBalance).toFixed(2)}`
+                      {isTheyOwe
+                        ? `They owe you ₹${Math.abs(member.netBalance).toFixed(2)}`
+                        : isYouOwe
+                          ? `You owe ₹${Math.abs(member.netBalance).toFixed(2)}`
                           : "Settled up"}
                     </div>
                   </div>
@@ -311,6 +323,21 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
 
         {selectedGroupMemberId && (
           <>
+            {/* Instant UPI Payment Section */}
+            {paymentType === "youPaid" && (() => {
+              const targetMember = groupMembers.find((m) => m.userId === selectedGroupMemberId);
+              const currentAmount = parseFloat(amountInput) || Math.abs(targetMember?.netBalance || 0);
+
+              return (
+                <UpiPaymentCard
+                  receiverName={targetMember?.name || "Member"}
+                  receiverUpiId={targetMember?.upiId || ""}
+                  amount={currentAmount}
+                  note={noteInput || "Group Settlement"}
+                />
+              );
+            })()}
+
             {/* Payment direction */}
             <div className="space-y-2">
               <Label>Who paid?</Label>
@@ -385,7 +412,7 @@ export default function SettlementForm({ entityType, entityData, onSuccess }) {
             <div className="space-y-2">
               <Label htmlFor="amount">Amount</Label>
               <div className="relative">
-                <span className="absolute left-3 top-2.5">$</span>
+                <span className="absolute left-3 top-2.5">₹</span>
                 <Input
                   id="amount"
                   placeholder="0.00"

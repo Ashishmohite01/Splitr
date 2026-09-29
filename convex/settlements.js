@@ -18,6 +18,9 @@ export const createSettlement = mutation({
   handler: async (ctx, args) => {
     // Use centralized getCurrentUser function
     const caller = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!caller) {
+      throw new Error("You must be logged in to create a settlement");
+    }
 
     /* ── basic validation ────────────────────────────────────────────────── */
     if (args.amount <= 0) throw new Error("Amount must be positive");
@@ -154,6 +157,7 @@ export const getSettlementData = query({
           name: other.name,
           email: other.email,
           imageUrl: other.imageUrl,
+          upiId: other.upiId,
         },
         youAreOwed: owed,
         youOwe: owing,
@@ -229,6 +233,7 @@ export const getSettlementData = query({
           userId: uid,
           name: m?.name || "Unknown",
           imageUrl: m?.imageUrl,
+          upiId: m?.upiId,
           youAreOwed: owed,
           youOwe: owing,
           netBalance: owed - owing,

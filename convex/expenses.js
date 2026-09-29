@@ -23,6 +23,9 @@ export const createExpense = mutation({
   handler: async (ctx, args) => {
     // Use centralized getCurrentUser function
     const user = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!user) {
+      throw new Error("You must be logged in to create an expense");
+    }
 
     // If there's a group, verify the user is a member
     if (args.groupId) {
@@ -73,26 +76,16 @@ export const getExpensesBetweenUsers = query({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     const me = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!me) {
+      return { expenses: [], settlements: [], otherUser: null, balance: 0 };
+    }
     if (me._id === userId) throw new Error("Cannot query yourself");
 
     /* ───── 1. One-on-one expenses where either user is the payer ───── */
-    // Use the compound index (`paidByUserId`,`groupId`) with groupId = undefined
-    const myPaid = await ctx.db
-      .query("expenses")
-      .withIndex("by_user_and_group", (q) =>
-        q.eq("paidByUserId", me._id).eq("groupId", undefined)
-      )
-      .collect();
-
-    const theirPaid = await ctx.db
-      .query("expenses")
-      .withIndex("by_user_and_group", (q) =>
-        q.eq("paidByUserId", userId).eq("groupId", undefined)
-      )
-      .collect();
-
-    // Merge → candidate set is now just the rows either of us paid for
-    const candidateExpenses = [...myPaid, ...theirPaid];
+    const allExpenses = await ctx.db.query("expenses").collect();
+    const candidateExpenses = allExpenses.filter(
+      (e) => !e.groupId && (e.paidByUserId === me._id || e.paidByUserId === userId)
+    );
 
     /* ───── 2. Keep only rows where BOTH are involved (payer or split) ─ */
     const expenses = candidateExpenses.filter((e) => {
@@ -161,6 +154,7 @@ export const getExpensesBetweenUsers = query({
         name: other.name,
         email: other.email,
         imageUrl: other.imageUrl,
+        upiId: other.upiId,
       },
       balance,
     };
@@ -175,6 +169,9 @@ export const deleteExpense = mutation({
   handler: async (ctx, args) => {
     // Get the current user
     const user = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!user) {
+      throw new Error("You must be logged in to delete an expense");
+    }
 
     // Get the expense
     const expense = await ctx.db.get(args.expenseId);

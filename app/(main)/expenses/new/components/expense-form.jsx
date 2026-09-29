@@ -79,6 +79,13 @@ export function ExpenseForm({ type = "individual", onSuccess }) {
   const amountValue = watch("amount");
   const paidByUserId = watch("paidByUserId");
 
+  // When currentUser loads, auto-populate paidByUserId if empty
+  useEffect(() => {
+    if (currentUser?._id && !paidByUserId) {
+      setValue("paidByUserId", currentUser._id);
+    }
+  }, [currentUser, paidByUserId, setValue]);
+
   // When a user is added or removed, update the participant list
   useEffect(() => {
     if (participants.length === 0 && currentUser) {
@@ -99,8 +106,23 @@ export function ExpenseForm({ type = "individual", onSuccess }) {
     try {
       const amount = parseFloat(data.amount);
 
+      let currentSplits = splits;
+      // If splits is empty or doesn't match participants count, generate fallback equal splits
+      if (
+        !currentSplits ||
+        currentSplits.length === 0 ||
+        currentSplits.length !== participants.length
+      ) {
+        const shareAmount = amount / (participants.length || 1);
+        currentSplits = participants.map((p) => ({
+          userId: p.id,
+          amount: shareAmount,
+          paid: p.id === data.paidByUserId,
+        }));
+      }
+
       // Prepare splits in the format expected by the API
-      const formattedSplits = splits.map((split) => ({
+      const formattedSplits = currentSplits.map((split) => ({
         userId: split.userId,
         amount: split.amount,
         paid: split.userId === data.paidByUserId,

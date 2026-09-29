@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useConvexQuery } from "@/hooks/use-convex-query";
 import { api } from "@/convex/_generated/api";
 import { BarLoader } from "react-spinners";
@@ -16,18 +16,23 @@ import {
 export function GroupSelector({ onChange }) {
   const [selectedGroupId, setSelectedGroupId] = useState("");
 
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+
   // Single query to get all data we need
   const { data, isLoading } = useConvexQuery(
     api.groups.getGroupOrMembers,
     selectedGroupId ? { groupId: selectedGroupId } : {}
   );
 
-  // When group data changes, notify parent
+  // When group data changes, notify parent safely
   useEffect(() => {
-    if (data?.selectedGroup && onChange) {
-      onChange(data.selectedGroup);
+    if (data?.selectedGroup) {
+      onChangeRef.current?.(data.selectedGroup);
     }
-  }, [data, onChange]);
+  }, [data?.selectedGroup]);
 
   const handleGroupChange = (groupId) => {
     setSelectedGroupId(groupId);

@@ -9,6 +9,7 @@ export const getGroupOrMembers = query({
   handler: async (ctx, args) => {
     // Use centralized getCurrentUser function
     const currentUser = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!currentUser) return { selectedGroup: null, groups: [] };
 
     // Get all groups where the user is a member
     const allGroups = await ctx.db.query("groups").collect();
@@ -82,6 +83,7 @@ export const getGroupExpenses = query({
   handler: async (ctx, { groupId }) => {
     // Use centralized getCurrentUser function
     const currentUser = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!currentUser) return [];
 
     const group = await ctx.db.get(groupId);
     if (!group) throw new Error("Group not found");
@@ -100,12 +102,22 @@ export const getGroupExpenses = query({
       .collect();
 
     /* ----------  member map ---------- */
-    const memberDetails = await Promise.all(
-      group.members.map(async (m) => {
-        const u = await ctx.db.get(m.userId);
-        return { id: u._id, name: u.name, imageUrl: u.imageUrl, role: m.role };
-      })
-    );
+    const memberDetails = (
+      await Promise.all(
+        group.members.map(async (m) => {
+          const u = await ctx.db.get(m.userId);
+          if (!u) return null;
+          return {
+            id: u._id,
+            name: u.name || "Member",
+            email: u.email || "",
+            imageUrl: u.imageUrl,
+            upiId: u.upiId || "",
+            role: m.role,
+          };
+        })
+      )
+    ).filter(Boolean);
     const ids = memberDetails.map((m) => m.id);
 
     /* ----------  ledgers ---------- */
@@ -120,34 +132,48 @@ export const getGroupExpenses = query({
       });
     });
 
+    const isMemberId = (uid) => ids.includes(uid);
+
     /* ----------  apply expenses ---------- */
     for (const exp of expenses) {
       const payer = exp.paidByUserId;
+      if (!isMemberId(payer)) continue;
+
       for (const split of exp.splits) {
         if (split.userId === payer || split.paid) continue; // skip payer & settled
         const debtor = split.userId;
+        if (!isMemberId(debtor)) continue;
+
         const amt = split.amount;
 
-        totals[payer] += amt;
-        totals[debtor] -= amt;
+        if (totals[payer] !== undefined) totals[payer] += amt;
+        if (totals[debtor] !== undefined) totals[debtor] -= amt;
 
-        ledger[debtor][payer] += amt; // debtor owes payer
+        if (ledger[debtor] && ledger[debtor][payer] !== undefined) {
+          ledger[debtor][payer] += amt; // debtor owes payer
+        }
       }
     }
 
     /* ----------  apply settlements ---------- */
     for (const s of settlements) {
-      totals[s.paidByUserId] += s.amount;
-      totals[s.receivedByUserId] -= s.amount;
+      const p = s.paidByUserId;
+      const r = s.receivedByUserId;
 
-      ledger[s.paidByUserId][s.receivedByUserId] -= s.amount; // they paid back
+      if (isMemberId(p) && totals[p] !== undefined) totals[p] += s.amount;
+      if (isMemberId(r) && totals[r] !== undefined) totals[r] -= s.amount;
+
+      if (isMemberId(p) && isMemberId(r) && ledger[p] && ledger[p][r] !== undefined) {
+        ledger[p][r] -= s.amount; // they paid back
+      }
     }
 
     /* ----------  net the pair‑wise ledger ---------- */
     ids.forEach((a) => {
       ids.forEach((b) => {
         if (a >= b) return; // visit each unordered pair once
-        const diff = ledger[a][b] - ledger[b][a];
+        if (!ledger[a] || !ledger[b]) return;
+        const diff = (ledger[a][b] || 0) - (ledger[b][a] || 0);
         if (diff > 0) {
           ledger[a][b] = diff;
           ledger[b][a] = 0;
@@ -163,12 +189,12 @@ export const getGroupExpenses = query({
     /* ----------  shape the response ---------- */
     const balances = memberDetails.map((m) => ({
       ...m,
-      totalBalance: totals[m.id],
-      owes: Object.entries(ledger[m.id])
+      totalBalance: totals[m.id] || 0,
+      owes: Object.entries(ledger[m.id] || {})
         .filter(([, v]) => v > 0)
         .map(([to, amount]) => ({ to, amount })),
       owedBy: ids
-        .filter((other) => ledger[other][m.id] > 0)
+        .filter((other) => ledger[other] && ledger[other][m.id] > 0)
         .map((other) => ({ from: other, amount: ledger[other][m.id] })),
     }));
 

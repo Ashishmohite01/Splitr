@@ -10,28 +10,16 @@ export const getAllContacts = query({
   handler: async (ctx) => {
     // Use the centralized getCurrentUser instead of duplicating auth logic
     const currentUser = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!currentUser) return { users: [], groups: [] };
 
-    /* ── personal expenses where YOU are the payer ─────────────────────── */
-    const expensesYouPaid = await ctx.db
-      .query("expenses")
-      .withIndex("by_user_and_group", (q) =>
-        q.eq("paidByUserId", currentUser._id).eq("groupId", undefined)
-      )
-      .collect();
-
-    /* ── personal expenses where YOU are **not** the payer ─────────────── */
-    const expensesNotPaidByYou = (
-      await ctx.db
-        .query("expenses")
-        .withIndex("by_group", (q) => q.eq("groupId", undefined)) // only 1‑to‑1
-        .collect()
-    ).filter(
+    /* ── personal expenses (no groupId) ─────────────────────────────────── */
+    const allExpenses = await ctx.db.query("expenses").collect();
+    const personalExpenses = allExpenses.filter(
       (e) =>
-        e.paidByUserId !== currentUser._id &&
-        e.splits.some((s) => s.userId === currentUser._id)
+        !e.groupId &&
+        (e.paidByUserId === currentUser._id ||
+          e.splits.some((s) => s.userId === currentUser._id))
     );
-
-    const personalExpenses = [...expensesYouPaid, ...expensesNotPaidByYou];
 
     /* ── extract unique counterpart IDs ─────────────────────────────────── */
     const contactIds = new Set();
@@ -72,10 +60,11 @@ export const getAllContacts = query({
       }));
 
     /* sort alphabetically */
-    contactUsers.sort((a, b) => a?.name.localeCompare(b?.name));
-    userGroups.sort((a, b) => a.name.localeCompare(b.name));
+    const validContactUsers = contactUsers.filter(Boolean);
+    validContactUsers.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    userGroups.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-    return { users: contactUsers.filter(Boolean), groups: userGroups };
+    return { users: validContactUsers, groups: userGroups };
   },
 });
 

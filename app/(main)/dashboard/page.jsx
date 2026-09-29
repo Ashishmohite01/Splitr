@@ -16,8 +16,10 @@ import Link from "next/link";
 import { ExpenseSummary } from "./components/expense-summary";
 import { BalanceSummary } from "./components/balance-summary";
 import { GroupList } from "./components/group-list";
+import { ExportStatementButton } from "@/components/export-statement-button";
 
 export default function Dashboard() {
+  const { data: currentUser } = useConvexQuery(api.users.getCurrentUser);
   const { data: balances, isLoading: balancesLoading } = useConvexQuery(
     api.dashboard.getUserBalances
   );
@@ -33,6 +35,10 @@ export default function Dashboard() {
   const { data: monthlySpending, isLoading: monthlySpendingLoading } =
     useConvexQuery(api.dashboard.getMonthlySpending);
 
+  const { data: allTransactions } = useConvexQuery(
+    api.dashboard.getAllUserTransactions
+  );
+
   const isLoading =
     balancesLoading ||
     groupsLoading ||
@@ -47,14 +53,26 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          <div className="flex  justify-between flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex justify-between flex-col sm:flex-row sm:items-center gap-4">
             <h1 className="text-5xl gradient-title">Dashboard</h1>
-            <Button asChild>
-              <Link href="/expenses/new">
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Add expense
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <ExportStatementButton
+                title="Overall Account Statement"
+                entityName="Overall Splitr Account"
+                expenses={allTransactions?.expenses || []}
+                settlements={allTransactions?.settlements || []}
+                currentUser={currentUser}
+                userLookupMap={allTransactions?.userLookupMap || {}}
+                netBalance={balances?.totalBalance || 0}
+                isGroup={false}
+              />
+              <Button asChild>
+                <Link href="/expenses/new">
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Add expense
+                </Link>
+              </Button>
+            </div>
           </div>
 
           {/* Balance overview cards */}
@@ -69,14 +87,14 @@ export default function Dashboard() {
                 <div className="text-2xl font-bold">
                   {balances?.totalBalance > 0 ? (
                     <span className="text-green-600">
-                      +${balances?.totalBalance.toFixed(2)}
+                      +₹{balances?.totalBalance?.toFixed(2)}
                     </span>
                   ) : balances?.totalBalance < 0 ? (
                     <span className="text-red-600">
-                      -${Math.abs(balances?.totalBalance).toFixed(2)}
+                      -₹{Math.abs(balances?.totalBalance || 0).toFixed(2)}
                     </span>
                   ) : (
-                    <span>$0.00</span>
+                    <span>₹0.00</span>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -97,7 +115,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-green-600">
-                  ${balances?.youAreOwed.toFixed(2)}
+                  ₹{balances?.youAreOwed?.toFixed(2) || "0.00"}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   From {balances?.oweDetails?.youAreOwedBy?.length || 0} people
@@ -115,7 +133,7 @@ export default function Dashboard() {
                 {balances?.oweDetails?.youOwe?.length > 0 ? (
                   <>
                     <div className="text-2xl font-bold text-red-600">
-                      ${balances?.youOwe.toFixed(2)}
+                      ₹{balances?.youOwe?.toFixed(2) || "0.00"}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
                       To {balances?.oweDetails?.youOwe?.length || 0} people
@@ -123,7 +141,7 @@ export default function Dashboard() {
                   </>
                 ) : (
                   <>
-                    <div className="text-2xl font-bold">$0.00</div>
+                    <div className="text-2xl font-bold">₹0.00</div>
                     <p className="text-xs text-muted-foreground mt-1">
                       You don't owe anyone
                     </p>

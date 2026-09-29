@@ -11,6 +11,8 @@ import { Authenticated, Unauthenticated } from "convex/react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 
+import { UpiSettingsModal } from "./upi-settings-modal";
+
 export default function Header() {
   const { isLoading } = useStoreUser();
   const path = usePathname();
@@ -45,8 +47,9 @@ export default function Header() {
           </div>
         )}
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <Authenticated>
+            <UpiSettingsModal variant="outline" size="sm" />
             <Link href="/dashboard">
               <Button
                 variant="outline"

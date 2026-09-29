@@ -4,13 +4,21 @@ import { internal } from "./_generated/api";
 // Get user balances
 export const getUserBalances = query({
   handler: async (ctx) => {
-    // Use the existing getCurrentUser function instead of repeating auth logic
     const user = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!user) {
+      return {
+        youOwe: 0,
+        youAreOwed: 0,
+        totalBalance: 0,
+        oweDetails: { youOwe: [], youAreOwedBy: [] },
+      };
+    }
 
     /* ───────────── 1‑to‑1 expenses (no groupId) ───────────── */
-    const expenses = (await ctx.db.query("expenses").collect()).filter(
+    const allExpenses = await ctx.db.query("expenses").collect();
+    const expenses = allExpenses.filter(
       (e) =>
-        !e.groupId && // 1‑to‑1 only
+        !e.groupId &&
         (e.paidByUserId === user._id ||
           e.splits.some((s) => s.userId === user._id))
     );
@@ -38,7 +46,8 @@ export const getUserBalances = query({
     }
 
     /* ───────────── 1‑to‑1 settlements (no groupId) ───────────── */
-    const settlements = (await ctx.db.query("settlements").collect()).filter(
+    const allSettlements = await ctx.db.query("settlements").collect();
+    const settlements = allSettlements.filter(
       (s) =>
         !s.groupId &&
         (s.paidByUserId === user._id || s.receivedByUserId === user._id)
@@ -56,21 +65,30 @@ export const getUserBalances = query({
       }
     }
 
-    /* build lists for UI */
+    /* build lists for UI concurrently */
+    const entries = Object.entries(balanceByUser).filter(
+      ([_, { owed, owing }]) => owed - owing !== 0
+    );
+
+    const counterpartUsers = await Promise.all(
+      entries.map(([uid]) => ctx.db.get(uid))
+    );
+
     const youOweList = [];
     const youAreOwedByList = [];
-    for (const [uid, { owed, owing }] of Object.entries(balanceByUser)) {
+
+    entries.forEach(([uid, { owed, owing }], idx) => {
       const net = owed - owing;
-      if (net === 0) continue;
-      const counterpart = await ctx.db.get(uid);
+      const counterpart = counterpartUsers[idx];
       const base = {
         userId: uid,
         name: counterpart?.name ?? "Unknown",
         imageUrl: counterpart?.imageUrl,
+        upiId: counterpart?.upiId,
         amount: Math.abs(net),
       };
       net > 0 ? youAreOwedByList.push(base) : youOweList.push(base);
-    }
+    });
 
     youOweList.sort((a, b) => b.amount - a.amount);
     youAreOwedByList.sort((a, b) => b.amount - a.amount);
@@ -88,27 +106,23 @@ export const getUserBalances = query({
 export const getTotalSpent = query({
   handler: async (ctx) => {
     const user = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!user) return 0;
 
-    // Get start of current year timestamp
     const currentYear = new Date().getFullYear();
     const startOfYear = new Date(currentYear, 0, 1).getTime();
 
-    // Get all expenses for the current year
     const expenses = await ctx.db
       .query("expenses")
       .withIndex("by_date", (q) => q.gte("date", startOfYear))
       .collect();
 
-    // Filter for expenses where user is involved
     const userExpenses = expenses.filter(
       (expense) =>
         expense.paidByUserId === user._id ||
         expense.splits.some((split) => split.userId === user._id)
     );
 
-    // Calculate total spent (personal share only)
     let totalSpent = 0;
-
     userExpenses.forEach((expense) => {
       const userSplit = expense.splits.find(
         (split) => split.userId === user._id
@@ -126,34 +140,28 @@ export const getTotalSpent = query({
 export const getMonthlySpending = query({
   handler: async (ctx) => {
     const user = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!user) return [];
 
-    // Get current year
     const currentYear = new Date().getFullYear();
     const startOfYear = new Date(currentYear, 0, 1).getTime();
 
-    // Get all expenses for current year
     const allExpenses = await ctx.db
       .query("expenses")
       .withIndex("by_date", (q) => q.gte("date", startOfYear))
       .collect();
 
-    // Filter for expenses where user is involved
     const userExpenses = allExpenses.filter(
       (expense) =>
         expense.paidByUserId === user._id ||
         expense.splits.some((split) => split.userId === user._id)
     );
 
-    // Group expenses by month
     const monthlyTotals = {};
-
-    // Initialize all months with zero
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(currentYear, i, 1);
       monthlyTotals[monthDate.getTime()] = 0;
     }
 
-    // Sum up expenses by month
     userExpenses.forEach((expense) => {
       const date = new Date(expense.date);
       const monthStart = new Date(
@@ -162,7 +170,6 @@ export const getMonthlySpending = query({
         1
       ).getTime();
 
-      // Get user's share of this expense
       const userSplit = expense.splits.find(
         (split) => split.userId === user._id
       );
@@ -172,15 +179,12 @@ export const getMonthlySpending = query({
       }
     });
 
-    // Convert to array format
     const result = Object.entries(monthlyTotals).map(([month, total]) => ({
       month: parseInt(month),
       total,
     }));
 
-    // Sort by month (ascending)
     result.sort((a, b) => a.month - b.month);
-
     return result;
   },
 });
@@ -189,19 +193,15 @@ export const getMonthlySpending = query({
 export const getUserGroups = query({
   handler: async (ctx) => {
     const user = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!user) return [];
 
-    // Get all groups
     const allGroups = await ctx.db.query("groups").collect();
-
-    // Filter for groups where the user is a member
     const groups = allGroups.filter((group) =>
       group.members.some((member) => member.userId === user._id)
     );
 
-    // Calculate balances for each group
     const enhancedGroups = await Promise.all(
       groups.map(async (group) => {
-        // Get all expenses for this group
         const expenses = await ctx.db
           .query("expenses")
           .withIndex("by_group", (q) => q.eq("groupId", group._id))
@@ -211,14 +211,12 @@ export const getUserGroups = query({
 
         expenses.forEach((expense) => {
           if (expense.paidByUserId === user._id) {
-            // User paid for others
             expense.splits.forEach((split) => {
               if (split.userId !== user._id && !split.paid) {
                 balance += split.amount;
               }
             });
           } else {
-            // User owes someone else
             const userSplit = expense.splits.find(
               (split) => split.userId === user._id
             );
@@ -228,26 +226,20 @@ export const getUserGroups = query({
           }
         });
 
-        // Apply settlements
+        // Apply settlements using by_group index
         const settlements = await ctx.db
           .query("settlements")
-          .filter((q) =>
-            q.and(
-              q.eq(q.field("groupId"), group._id),
-              q.or(
-                q.eq(q.field("paidByUserId"), user._id),
-                q.eq(q.field("receivedByUserId"), user._id)
-              )
-            )
-          )
+          .withIndex("by_group", (q) => q.eq("groupId", group._id))
           .collect();
 
-        settlements.forEach((settlement) => {
+        const userSettlements = settlements.filter(
+          (s) => s.paidByUserId === user._id || s.receivedByUserId === user._id
+        );
+
+        userSettlements.forEach((settlement) => {
           if (settlement.paidByUserId === user._id) {
-            // User paid someone
             balance += settlement.amount;
           } else {
-            // Someone paid the user
             balance -= settlement.amount;
           }
         });
@@ -261,5 +253,51 @@ export const getUserGroups = query({
     );
 
     return enhancedGroups;
+  },
+});
+
+// Get all user transactions (expenses & settlements) for overall statement export
+export const getAllUserTransactions = query({
+  handler: async (ctx) => {
+    const user = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!user) return { expenses: [], settlements: [], userLookupMap: {} };
+
+    const allExpenses = await ctx.db.query("expenses").collect();
+    const userExpenses = allExpenses.filter(
+      (e) =>
+        e.paidByUserId === user._id ||
+        e.splits.some((s) => s.userId === user._id)
+    );
+
+    const allSettlements = await ctx.db.query("settlements").collect();
+    const userSettlements = allSettlements.filter(
+      (s) =>
+        s.paidByUserId === user._id || s.receivedByUserId === user._id
+    );
+
+    // Collect all involved user IDs for lookup map
+    const userIds = new Set();
+    userExpenses.forEach((e) => {
+      userIds.add(e.paidByUserId);
+      e.splits?.forEach((s) => userIds.add(s.userId));
+    });
+    userSettlements.forEach((s) => {
+      userIds.add(s.paidByUserId);
+      userIds.add(s.receivedByUserId);
+    });
+
+    const userMap = {};
+    for (const id of userIds) {
+      const u = await ctx.db.get(id);
+      if (u) {
+        userMap[id] = { name: u.name, email: u.email, imageUrl: u.imageUrl };
+      }
+    }
+
+    return {
+      expenses: userExpenses,
+      settlements: userSettlements,
+      userLookupMap: userMap,
+    };
   },
 });

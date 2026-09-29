@@ -43,7 +43,7 @@ export const getCurrentUser = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
-      throw new Error("Not authenticated");
+      return null;
     }
 
     const user = await ctx.db
@@ -53,13 +53,10 @@ export const getCurrentUser = query({
       )
       .first();
 
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    return user;
+    return user || null;
   },
 });
+
 
 // Search users by name or email (for adding participants)
 export const searchUsers = query({
@@ -69,6 +66,7 @@ export const searchUsers = query({
   handler: async (ctx, args) => {
     // Use centralized getCurrentUser function
     const currentUser = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!currentUser) return [];
 
     // Don't search if query is too short
     if (args.query.length < 2) {
@@ -103,6 +101,26 @@ export const searchUsers = query({
         name: user.name,
         email: user.email,
         imageUrl: user.imageUrl,
+        upiId: user.upiId,
       }));
+  },
+});
+
+// Update current user's UPI ID
+export const updateUpiId = mutation({
+  args: {
+    upiId: v.string(),
+  },
+  handler: async (ctx, { upiId }) => {
+    const user = await ctx.runQuery(internal.users.getCurrentUser);
+    if (!user) {
+      throw new Error("You must be logged in to update your UPI ID");
+    }
+
+    await ctx.db.patch(user._id, {
+      upiId: upiId.trim(),
+    });
+
+    return user._id;
   },
 });

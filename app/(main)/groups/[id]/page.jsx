@@ -14,12 +14,14 @@ import { ExpenseList } from "@/components/expense-list";
 import { SettlementList } from "@/components/settlement-list";
 import { GroupBalances } from "@/components/group-balances";
 import { GroupMembers } from "@/components/group-members";
+import { ExportStatementButton } from "@/components/export-statement-button";
 
 export default function GroupExpensesPage() {
   const params = useParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("expenses");
 
+  const { data: currentUser } = useConvexQuery(api.users.getCurrentUser);
   const { data, isLoading } = useConvexQuery(api.groups.getGroupExpenses, {
     groupId: params.id,
   });
@@ -38,6 +40,9 @@ export default function GroupExpensesPage() {
   const settlements = data?.settlements || [];
   const balances = data?.balances || [];
   const userLookupMap = data?.userLookupMap || {};
+
+  // Find current user's balance in group
+  const meBalance = balances?.find((b) => b.id === currentUser?._id);
 
   return (
     <div className="container mx-auto py-6 max-w-4xl">
@@ -66,7 +71,17 @@ export default function GroupExpensesPage() {
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <ExportStatementButton
+              title={`${group?.name || "Group"} - Statement`}
+              entityName={`Group (${group?.name})`}
+              expenses={expenses}
+              settlements={settlements}
+              currentUser={currentUser}
+              userLookupMap={userLookupMap}
+              netBalance={meBalance?.totalBalance || 0}
+              isGroup={true}
+            />
             <Button asChild variant="outline">
               <Link href={`/settlements/group/${params.id}`}>
                 <ArrowLeftRight className="mr-2 h-4 w-4" />

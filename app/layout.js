@@ -21,6 +21,7 @@ export default function RootLayout({ children }) {
       <body className={`${inter.className}`}>
         <ClerkProvider
           publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+          clockSkewInMs={60000}
         >
           <ConvexClientProvider>
             <Header />

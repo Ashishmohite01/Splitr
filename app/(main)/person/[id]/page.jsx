@@ -13,12 +13,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlusCircle, ArrowLeftRight, ArrowLeft } from "lucide-react";
 import { ExpenseList } from "@/components/expense-list";
 import { SettlementList } from "@/components/settlement-list";
+import { ExportStatementButton } from "@/components/export-statement-button";
 
 export default function PersonExpensesPage() {
   const params = useParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("expenses");
 
+  const { data: currentUser } = useConvexQuery(api.users.getCurrentUser);
   const { data, isLoading } = useConvexQuery(
     api.expenses.getExpensesBetweenUsers,
     { userId: params.id }
@@ -36,6 +38,8 @@ export default function PersonExpensesPage() {
   const expenses = data?.expenses || [];
   const settlements = data?.settlements || [];
   const balance = data?.balance || 0;
+
+  const userLookupMap = otherUser ? { [otherUser.id]: otherUser } : {};
 
   return (
     <div className="container mx-auto py-6 max-w-4xl">
@@ -64,7 +68,17 @@ export default function PersonExpensesPage() {
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <ExportStatementButton
+              title={`Statement - ${otherUser?.name || "User"}`}
+              entityName={`Person (${otherUser?.name || "Contact"})`}
+              expenses={expenses}
+              settlements={settlements}
+              currentUser={currentUser}
+              userLookupMap={userLookupMap}
+              netBalance={balance}
+              isGroup={false}
+            />
             <Button asChild variant="outline">
               <Link href={`/settlements/user/${params.id}`}>
                 <ArrowLeftRight className="mr-2 h-4 w-4" />
@@ -105,7 +119,7 @@ export default function PersonExpensesPage() {
             <div
               className={`text-2xl font-bold ${balance > 0 ? "text-green-600" : balance < 0 ? "text-red-600" : ""}`}
             >
-              ${Math.abs(balance).toFixed(2)}
+              ₹{Math.abs(balance).toFixed(2)}
             </div>
           </div>
         </CardContent>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -12,11 +12,21 @@ import {
 export function CategorySelector({ categories, onChange }) {
   const [selectedCategory, setSelectedCategory] = useState("");
 
-  // Handle when a category is selected
+  // Set default category when component mounts or categories change
+  useEffect(() => {
+    if (!selectedCategory && categories && categories.length > 0) {
+      const defaultCategory =
+        categories.find((cat) => cat.isDefault) || categories[0];
+      setSelectedCategory(defaultCategory.id);
+      if (onChange) {
+        onChange(defaultCategory.id);
+      }
+    }
+  }, [categories, selectedCategory, onChange]);
+
+  // Handle when a category is selected manually
   const handleCategoryChange = (categoryId) => {
     setSelectedCategory(categoryId);
-
-    // Only call onChange if it exists and the value has changed
     if (onChange && categoryId !== selectedCategory) {
       onChange(categoryId);
     }
@@ -25,21 +35,6 @@ export function CategorySelector({ categories, onChange }) {
   // If no categories or empty categories array
   if (!categories || categories.length === 0) {
     return <div>No categories available</div>;
-  }
-
-  // Set default value if not already set
-  if (!selectedCategory && categories.length > 0) {
-    // Find a default category or use the first one
-    const defaultCategory =
-      categories.find((cat) => cat.isDefault) || categories[0];
-
-    // Set the default without triggering a re-render loop
-    setTimeout(() => {
-      setSelectedCategory(defaultCategory.id);
-      if (onChange) {
-        onChange(defaultCategory.id);
-      }
-    }, 0);
   }
 
   return (
@@ -59,3 +54,4 @@ export function CategorySelector({ categories, onChange }) {
     </Select>
   );
 }
+

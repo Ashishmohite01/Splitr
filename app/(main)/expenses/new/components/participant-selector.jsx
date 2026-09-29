@@ -24,6 +24,7 @@ import {
 
 export function ParticipantSelector({ participants, onParticipantsChange }) {
   const { data: currentUser } = useConvexQuery(api.users.getCurrentUser);
+  const { data: contactsData } = useConvexQuery(api.contacts.getAllContacts);
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -32,6 +33,9 @@ export function ParticipantSelector({ participants, onParticipantsChange }) {
     api.users.searchUsers,
     { query: searchQuery }
   );
+
+  const contactUsers = contactsData?.users || [];
+  const displayUsers = searchQuery.length >= 2 ? searchResults : contactUsers;
 
   // Add a participant
   const addParticipant = (user) => {
@@ -49,7 +53,7 @@ export function ParticipantSelector({ participants, onParticipantsChange }) {
   // Remove a participant
   const removeParticipant = (userId) => {
     // Don't allow removing yourself
-    if (userId === currentUser._id) {
+    if (userId === currentUser?._id) {
       return;
     }
 
@@ -110,7 +114,7 @@ export function ParticipantSelector({ participants, onParticipantsChange }) {
                 />
                 <CommandList>
                   <CommandEmpty>
-                    {searchQuery.length < 2 ? (
+                    {searchQuery.length > 0 && searchQuery.length < 2 ? (
                       <p className="py-3 px-4 text-sm text-center text-muted-foreground">
                         Type at least 2 characters to search
                       </p>
@@ -124,8 +128,8 @@ export function ParticipantSelector({ participants, onParticipantsChange }) {
                       </p>
                     )}
                   </CommandEmpty>
-                  <CommandGroup heading="Users">
-                    {searchResults?.map((user) => (
+                  <CommandGroup heading={searchQuery.length >= 2 ? "Search Results" : "Recent Contacts"}>
+                    {displayUsers?.map((user) => (
                       <CommandItem
                         key={user.id}
                         value={user.name + user.email}

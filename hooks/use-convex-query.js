@@ -4,31 +4,10 @@ import { toast } from "sonner";
 
 export const useConvexQuery = (query, ...args) => {
   const result = useQuery(query, ...args);
-  const [data, setData] = useState(undefined);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // Use effect to handle the state changes based on the query result
-  useEffect(() => {
-    if (result === undefined) {
-      setIsLoading(true);
-    } else {
-      try {
-        setData(result);
-        setError(null);
-      } catch (err) {
-        setError(err);
-        toast.error(err.message);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  }, [result]);
-
   return {
-    data,
-    isLoading,
-    error,
+    data: result,
+    isLoading: result === undefined,
+    error: null,
   };
 };
 
