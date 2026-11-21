@@ -2,8 +2,6 @@
 
 Splitr is a modern, high-performance web application engineered to eliminate the social friction and mathematical complexity of shared finances. Designed for roommates, travelers, and friend groups, it provides a seamless, visual platform for tracking collective spending, sending automated payment reminders, and delivering AI-driven monthly financial insights.
 
-![splitr](https://github.com/user-attachments/assets/11e138c4-efcf-4a85-8586-f2993da118d8)
-
 ---
 
 ## ✨ Features
